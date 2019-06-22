@@ -12,13 +12,16 @@ player3 = [0, 1, 1, 1, 2, 2, 3, 3, 4]
 labels = ["player1", "player2", "player3"]
 colors = ["#6d904f", "#fc4f30", "#008fd5"]
 
-plt.stackplot(minutes, player1, player2, player3, labels=labels, colors=colors)
+fig, ax = plt.subplots()
+ax.stackplot(minutes, player1, player2, player3, labels=labels, colors=colors)
 
-plt.legend(loc=(0.07, 0.05))
+ax.legend(loc=(0.07, 0.05))
 
-plt.title("My Awesome Stack Plot")
+ax.set_title("My Awesome Stack Plot")
 plt.tight_layout()
 plt.show()
+
+fig.savefig("plots/stacked_plot.png")
 
 # Colors:
 # Blue = #008fd5
