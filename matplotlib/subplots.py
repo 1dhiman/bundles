@@ -29,5 +29,5 @@ plt.tight_layout()
 
 plt.show()
 
-fig1.savefig("plots/fig1.png")
-fig2.savefig("plots/fig2.png")
+fig1.savefig("plots/subplots_fig1.png")
+fig2.savefig("plots/subplots_fig2.png")
