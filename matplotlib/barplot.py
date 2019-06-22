@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 
 plt.style.use("fivethirtyeight")
 
-data = pd.read_csv("../data/data.csv")
+data = pd.read_csv("../data/barplot.csv")
 
 ids = data["Responder_id"]
 lang_responses = data["LanguagesWorkedWith"]
