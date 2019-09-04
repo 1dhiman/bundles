@@ -8,93 +8,84 @@ mpl.rcParams['lines.linewidth'] = 2
 
 # %matplotlib inline
 
-df = pd.read_excel('dataset.xlsx', 1)
+df = pd.read_excel('../dataset.xlsx', 1)
 df.head()
 
-df['OrderPeriod'] = df.OrderDate.apply(lambda x: x.strftime('%Y-%m'))
-df.head()
+from lifetimes.utils import summary_data_from_transaction_data
 
-df.set_index('UserId', inplace=True)
+data = summary_data_from_transaction_data(df, 'UserId', 'OrderDate', 
+                                          observation_period_end='2010-01-09',
+                                         monetary_value_col='TotalCharges')
+data.head()
 
-df['CohortGroup'] = df.groupby(level=0)['OrderDate'].min().apply(lambda x: x.strftime('%Y-%m'))
-df.reset_index(inplace=True)
-df.head()
+from lifetimes import BetaGeoFitter
 
-grouped = df.groupby(['CohortGroup', 'OrderPeriod'])
+bgf = BetaGeoFitter(penalizer_coef=0.0001)
+bgf.fit(data['frequency'], data['recency'], data['T'])
 
-# count the unique users, orders, and total revenue per Group + Period
-cohorts = grouped.agg({'UserId': pd.Series.nunique,
-                       'OrderId': pd.Series.nunique,
-                       'TotalCharges': np.sum})
+bgf
 
-# make the column names more meaningful
-cohorts.rename(columns={'UserId': 'TotalUsers',
-                        'OrderId': 'TotalOrders'}, inplace=True)
-cohorts.head()
+from lifetimes.plotting import plot_frequency_recency_matrix
 
-def cohort_period(df):
-    """
-    Creates a `CohortPeriod` column, which is the Nth period based on the user's first purchase.
-    
-    Example
-    -------
-    Say you want to get the 3rd month for every user:
-        df.sort(['UserId', 'OrderTime', inplace=True)
-        df = df.groupby('UserId').apply(cohort_period)
-        df[df.CohortPeriod == 3]
-    """
-    df['CohortPeriod'] = np.arange(len(df)) + 1
-    return df
+plot_frequency_recency_matrix(bgf);
 
-cohorts = cohorts.groupby(level=0).apply(cohort_period)
-cohorts.head()
+from lifetimes.plotting import plot_probability_alive_matrix
 
-x = df[(df.CohortGroup == '2009-01') & (df.OrderPeriod == '2009-01')]
-y = cohorts.loc[('2009-01', '2009-01')]
+plot_probability_alive_matrix(bgf);
 
-assert(x['UserId'].nunique() == y['TotalUsers'])
-assert(x['TotalCharges'].sum().round(2) == y['TotalCharges'].round(2))
-assert(x['OrderId'].nunique() == y['TotalOrders'])
+t = 1 # values from 0.1 to 1
+data['predicted_purchases'] = bgf.conditional_expected_number_of_purchases_up_to_time(t, data['frequency'], data['recency'], data['T'])
+data.sort_values(by='predicted_purchases').tail(10)
 
-x = df[(df.CohortGroup == '2009-01') & (df.OrderPeriod == '2009-09')]
-y = cohorts.loc[('2009-01', '2009-09')]
+from lifetimes.plotting import plot_period_transactions
+plot_period_transactions(bgf)
 
-assert(x['UserId'].nunique() == y['TotalUsers'])
-assert(x['TotalCharges'].sum().round(2) == y['TotalCharges'].round(2))
-assert(x['OrderId'].nunique() == y['TotalOrders'])
+from lifetimes.utils import calibration_and_holdout_data
 
-x = df[(df.CohortGroup == '2009-05') & (df.OrderPeriod == '2009-09')]
-y = cohorts.loc[('2009-05', '2009-09')]
+calibration_data = calibration_and_holdout_data(df, 'UserId', 'OrderDate',
+                                              calibration_period_end='2009-12-15',
+                                              observation_period_end='2010-01-09')
+calibration_data.head()
 
-assert(x['UserId'].nunique() == y['TotalUsers'])
-assert(x['TotalCharges'].sum().round(2) == y['TotalCharges'].round(2))
-assert(x['OrderId'].nunique() == y['TotalOrders'])
+from lifetimes.plotting import plot_calibration_purchases_vs_holdout_purchases
 
-# reindex the DataFrame
-cohorts.reset_index(inplace=True)
-cohorts.set_index(['CohortGroup', 'CohortPeriod'], inplace=True)
+bgf.fit(calibration_data['frequency_cal'], calibration_data['recency_cal'], calibration_data['T_cal'])
+plot_calibration_purchases_vs_holdout_purchases(bgf, calibration_data)
 
-# create a Series holding the total size of each CohortGroup
-cohort_group_size = cohorts['TotalUsers'].groupby(level=0).first()
-cohort_group_size.head()
+with_frequency = data[data['frequency']>0]
+with_frequency.head()
 
-cohorts['TotalUsers'].head()
+with_frequency[['monetary_value', 'frequency']].corr()
 
-cohorts['TotalUsers'].unstack(0).head()
+from lifetimes import GammaGammaFitter
 
-user_retention = cohorts['TotalUsers'].unstack(0).divide(cohort_group_size, axis=1)
-user_retention.head(10)
+ggf = GammaGammaFitter(penalizer_coef = 0)
+ggf.fit(with_frequency['frequency'], with_frequency['monetary_value'])
 
-user_retention[['2009-06', '2009-07', '2009-08']].plot(figsize=(10,5))
-plt.title('Cohorts: User Retention')
-plt.xticks(np.arange(1, 12.1, 1))
-plt.xlim(1, 12)
-plt.ylabel('% of Cohort Purchasing');
+ggf
 
-import seaborn as sns
-sns.set(style='white')
+ggf.conditional_expected_average_profit(
+    data['frequency'],
+    data['monetary_value']
+).head(20)
 
-plt.figure(figsize=(12, 8))
-plt.title('Cohorts: User Retention')
-sns.heatmap(user_retention.T, mask=user_retention.T.isnull(), annot=True, fmt='.0%');
+"Expected conditional average profit: %s, Average profit: %s" % (
+    ggf.conditional_expected_average_profit(
+        data['frequency'],
+        data['monetary_value']
+    ).mean(),
+    data[data['frequency']>0]['monetary_value'].mean()
+)
+
+bgf.fit(data['frequency'], data['recency'], data['T'])
+
+ggf.customer_lifetime_value(
+    bgf, #the model to use to predict the number of future transactions
+    data['frequency'],
+    data['recency'],
+    data['T'],
+    data['monetary_value'],
+    time=2, # months
+    discount_rate=0.1 # monthly discount rate
+).head(10)
 
